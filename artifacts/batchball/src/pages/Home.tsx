@@ -61,13 +61,15 @@ export default function Home() {
   const certsRef = useRef(new Map<string, Set<string>>());
   const manualCertsRef = useRef(new Set<string>());
   const detectingRef = useRef(false);
-  const queryingRef = useRef(false);
   const rowsRef = useRef(new Map<string, RowData>());
+  const queuedRef = useRef(new Set<string>());
+  const queryQueueRef = useRef<string[]>([]);
+  const activeQueriesRef = useRef(0);
+  const firstScrollRef = useRef(false);
 
   const [previews, setPreviews] = useState<string[]>([]);
   const [certsList, setCertsList] = useState<Array<[string, string[]]>>([]);
   const [detecting, setDetecting] = useState(false);
-  const [querying, setQuerying] = useState(false);
   const [progressText, setProgressText] = useState('');
   const [showProgress, setShowProgress] = useState(false);
   const [foundSummary, setFoundSummary] = useState('');
@@ -98,17 +100,46 @@ export default function Home() {
     setCertsList([...certsRef.current.entries()].map(([no, srcs]) => [no, [...srcs]]));
   }, []);
 
+  const pumpQueue = useCallback(() => {
+    const MAX_CONCURRENT = 3;
+    while (activeQueriesRef.current < MAX_CONCURRENT && queryQueueRef.current.length) {
+      const no = queryQueueRef.current.shift()!;
+      activeQueriesRef.current++;
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      runOne(no).finally(() => { activeQueriesRef.current--; pumpQueue(); });
+    }
+  }, []);
+
+  // 每识别到一张新卡，立即排队查询价格（限并发 3），不等全部识别完成
+  const enqueueQuery = useCallback((no: string) => {
+    if (queuedRef.current.has(no)) return;
+    queuedRef.current.add(no);
+    if (!rowsRef.current.has(no)) rowsRef.current.set(no, { status: 'pending' });
+    queryQueueRef.current.push(no);
+    setShowResults(true);
+    setRowsVersion(v => v + 1);
+    if (!firstScrollRef.current) {
+      firstScrollRef.current = true;
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    }
+    pumpQueue();
+  }, [pumpQueue]);
+
   const addCert = useCallback((no: string, source: string) => {
     if (!no) return;
-    if (!certsRef.current.has(no)) certsRef.current.set(no, new Set());
+    const isNew = !certsRef.current.has(no);
+    if (isNew) certsRef.current.set(no, new Set());
     certsRef.current.get(no)!.add(source);
     updateCertsList();
-  }, [updateCertsList]);
+    if (isNew) enqueueQuery(no);
+  }, [updateCertsList, enqueueQuery]);
 
   const removeCert = useCallback((no: string) => {
     certsRef.current.delete(no);
     manualCertsRef.current.delete(no);
     rowsRef.current.delete(no);
+    queuedRef.current.delete(no);
+    queryQueueRef.current = queryQueueRef.current.filter(x => x !== no);
     updateCertsList();
     setRowsVersion(v => v + 1);
     if (certsRef.current.size === 0) setShowResults(false);
@@ -401,6 +432,10 @@ export default function Home() {
     }, 400);
 
     certsRef.current.clear();
+    rowsRef.current.clear();
+    queuedRef.current.clear();
+    queryQueueRef.current = [];
+    firstScrollRef.current = false;
     for (const m of manualCertsRef.current) addCert(m, '手动');
     updateCertsList();
 
@@ -436,9 +471,6 @@ export default function Home() {
 
     detectingRef.current = false;
     setDetecting(false);
-
-    // 识别完成后自动查询价格，省去手动点击
-    if (certsRef.current.size) handleQuery();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addCert, appendLog, updateCertsList, countBySource]);
 
@@ -472,7 +504,7 @@ export default function Home() {
     setMethods({ m0: { state: '', text: '待运行' }, m1: { state: '', text: '待运行' }, m2: { state: '', text: '待运行' }, m3: { state: '', text: '待运行' }, m4: { state: '', text: '待运行' } });
   }
 
-  async function runOne(no: string, idx: number) {
+  async function runOne(no: string) {
     rowsRef.current.set(no, { status: 'pending' });
     setRowsVersion(v => v + 1);
     try {
@@ -485,23 +517,6 @@ export default function Home() {
       appendLog(`✕ ${no} 最终失败: ${err}`);
     }
     setRowsVersion(v => v + 1);
-  }
-
-  async function handleQuery() {
-    if (queryingRef.current || !certsRef.current.size) return;
-    queryingRef.current = true;
-    setQuerying(true);
-    rowsRef.current.clear();
-    setShowResults(true);
-    setRowsVersion(v => v + 1);
-    setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-    const list = [...certsRef.current.keys()];
-    let cursor = 0;
-    await Promise.all([0, 1].map(async () => {
-      while (cursor < list.length) { const i = cursor++; await runOne(list[i], i + 1); }
-    }));
-    queryingRef.current = false;
-    setQuerying(false);
   }
 
   function exportCsv() {
@@ -670,13 +685,7 @@ export default function Home() {
             const v = manualInput.trim();
             if (!/^\d{5,12}$/.test(v)) { alert('请输入纯数字证书号'); return; }
             addCert(v, '手动'); manualCertsRef.current.add(v); setManualInput('');
-          }}>添加</button>
-          <button
-            id="queryBtn"
-            className="btn"
-            disabled={detecting || querying || certsList.length === 0}
-            onClick={handleQuery}
-          >查询价格 →</button>
+          }}>添加并查询</button>
         </div>
       </div>
 
@@ -704,7 +713,7 @@ export default function Home() {
                     {!row ? <span className="status-pending">等待中…</span> :
                       row.status === 'ok' ? <span className="status-ok">✔ 成功</span> :
                       row.status === 'pending' ? <span className="status-pending">查询中…</span> :
-                      <><span className="status-err">✕ {row.error}</span> <button className="btn secondary small" onClick={() => runOne(no, idx)}>重试</button></>}
+                      <><span className="status-err">✕ {row.error}</span> <button className="btn secondary small" onClick={() => runOne(no)}>重试</button></>}
                   </td>
                 </tr>
               ))}
