@@ -1,4 +1,5 @@
-const API = 'https://alt-platform-server.production.internal.onlyalt.com/graphql/X';
+const API = 'https://proxy.kevinzhang.fun/pokeprice';
+const API_KEY = 'J_4tM1IBP304QF3y9eFqnfSpy7efTTGPg6MCncATHXc';
 
 const INITIAL_CERT_QUERY = `query InitialCert($certNumber: String!) { cert(certNumber: $certNumber) { certNumber gradeNumber gradingCompany asset { id } } }`;
 const DETAIL_QUERY = `query Detail($id: ID!, $tsf: TimeSeriesFilter!) {
@@ -8,7 +9,10 @@ const DETAIL_QUERY = `query Detail($id: ID!, $tsf: TimeSeriesFilter!) {
 async function gql(query: string, variables: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+    },
     body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
