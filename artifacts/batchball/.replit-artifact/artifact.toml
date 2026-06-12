@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "宝可梦卡牌价格汇总工具"
+version = "1.0.0"
+id = "artifacts/batchball"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21217
+
+[services.development]
+run = "pnpm --filter @workspace/batchball run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/batchball", "run", "build" ]
+publicDir = "artifacts/batchball/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21217"
+BASE_PATH = "/"
