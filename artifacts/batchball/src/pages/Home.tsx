@@ -108,7 +108,10 @@ export default function Home() {
   const removeCert = useCallback((no: string) => {
     certsRef.current.delete(no);
     manualCertsRef.current.delete(no);
+    rowsRef.current.delete(no);
     updateCertsList();
+    setRowsVersion(v => v + 1);
+    if (certsRef.current.size === 0) setShowResults(false);
   }, [updateCertsList]);
 
   const setMethod = useCallback((id: string, state: string, text: string) => {
@@ -433,6 +436,9 @@ export default function Home() {
 
     detectingRef.current = false;
     setDetecting(false);
+
+    // 识别完成后自动查询价格，省去手动点击
+    if (certsRef.current.size) handleQuery();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addCert, appendLog, updateCertsList, countBySource]);
 
