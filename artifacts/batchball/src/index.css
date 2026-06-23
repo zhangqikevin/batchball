@@ -173,6 +173,22 @@ tfoot td { font-weight: 800; color: var(--yellow); border-top: 2px solid var(--b
   white-space: nowrap;
 }
 
+/* 可展开行 + 最近成交 */
+.hint-row { font-size: 12px; color: var(--muted); margin-top: 12px; }
+.result-table tbody tr.clickable { cursor: pointer; }
+.result-table tbody tr.clickable:hover { background: #333; }
+.caret { display: inline-block; color: var(--yellow); margin-right: 6px; transition: transform .15s; }
+.caret.open { transform: rotate(90deg); }
+.detail-row > td { padding: 0; border-bottom: 1px solid #333; }
+.recent-sales { background: #242424; padding: 12px 16px; }
+.rs-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tx-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid #444; }
+.tx-table td { padding: 6px 8px; border-bottom: 1px solid #2a2a2a; }
+.tx-table .tx-price, .tx-table .tx-price a { color: var(--green); font-weight: 700; text-decoration: none; }
+.tx-table .tx-price a { border-bottom: 1px dashed var(--green); }
+.no-tx { color: var(--muted); font-size: 12px; padding: 6px 2px; }
+
 .log-area {
   font-size: 11px;
   color: var(--muted);
@@ -222,20 +238,33 @@ tfoot td { font-weight: 800; color: var(--yellow); border-top: 2px solid var(--b
   .addrow { flex-wrap: wrap; }
   .addrow input { flex: 1 1 55%; max-width: none; }
   #queryBtn { flex: 1 1 100%; padding: 14px; font-size: 15px; }
-  table thead { display: none; }
-  table, tbody, tfoot, tr, td { display: block; width: 100%; }
-  tbody tr {
+  /* 仅折叠主结果表（用直接子选择器，避免影响嵌套的最近成交表） */
+  .result-table > thead { display: none; }
+  .result-table, .result-table > tbody, .result-table > tfoot,
+  .result-table > tbody > tr, .result-table > tbody > tr > td,
+  .result-table > tfoot > tr, .result-table > tfoot > tr > td { display: block; width: 100%; }
+  .result-table > tbody > tr {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
     margin-bottom: 10px;
     padding: 10px 12px;
   }
-  tbody td { border: 0; padding: 3px 0; }
-  td.rowidx { display: none; }
-  td[data-l]::before { content: attr(data-l); color: var(--muted); font-size: 11px; display: inline-block; width: 72px; }
-  tfoot tr { display: flex; justify-content: space-between; padding: 8px 4px; }
-  tfoot td { border: 0; width: auto; }
+  .result-table > tbody > tr > td { border: 0; padding: 3px 0; }
+  .result-table td.rowidx { display: none; }
+  .result-table > tbody > tr > td[data-l]::before { content: attr(data-l); color: var(--muted); font-size: 11px; display: inline-block; width: 72px; }
+  .result-table > tfoot > tr { display: flex; justify-content: space-between; padding: 8px 4px; }
+  .result-table > tfoot > tr > td { border: 0; width: auto; }
+  /* 展开行：贴在卡片下方，不再单独成卡 */
+  .result-table > tbody > tr.detail-row { background: transparent; border: 0; padding: 0; margin: -6px 0 10px; }
+  .recent-sales { padding: 10px 12px; border-radius: 0 0 10px 10px; }
+  .rs-title { font-size: 11px; }
+  /* 最近成交表在窄屏每条成一块 */
+  .tx-table thead { display: none; }
+  .tx-table, .tx-table tbody, .tx-table tr, .tx-table td { display: block; width: 100%; }
+  .tx-table tr { padding: 6px 0; border-bottom: 1px solid #333; }
+  .tx-table td { border: 0; padding: 2px 0; font-size: 12px; }
+  .tx-table td[data-l]::before { content: attr(data-l) '：'; color: var(--muted); display: inline-block; width: 56px; }
   .suspect { flex-wrap: wrap; }
   .suspect img { height: 64px; }
   .suspect input { width: 100%; }

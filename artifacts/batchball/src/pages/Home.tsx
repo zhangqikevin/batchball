@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, Fragment } from 'react';
 import { readBarcodes } from 'zxing-wasm/full';
 import { createWorker } from 'tesseract.js';
 import {
@@ -88,6 +88,15 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = useCallback((no: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(no)) next.delete(no); else next.add(no);
+      return next;
+    });
+  }, []);
 
   const logRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -696,27 +705,72 @@ export default function Home() {
             <h2 style={{ margin: 0 }}>3. 价格汇总列表</h2>
             <button className="btn secondary small" onClick={exportCsv}>导出 CSV</button>
           </div>
-          <table style={{ marginTop: 12 }}>
+          <div className="hint-row">点击任意一行可展开查看该卡最近成交记录</div>
+          <table className="result-table" style={{ marginTop: 12 }}>
             <thead>
               <tr><th>#</th><th>Cert No</th><th>名称</th><th>评级</th><th>Alt 价格</th><th>总 POP</th><th>状态</th></tr>
             </thead>
             <tbody>
-              {rows.map(({ no, idx, row }) => (
-                <tr key={no}>
-                  <td className="rowidx">{idx}</td>
-                  <td className="mono" data-l="证书号">{no}</td>
-                  <td data-l="名称">{row?.data?.name ?? '—'}</td>
-                  <td data-l="评级">{row?.data ? <span className="grade-badge">{row.data.grade}</span> : '—'}</td>
-                  <td className="price" data-l="Alt 价格">{row?.data?.alt != null ? '$' + Math.round(row.data.alt).toLocaleString() : '—'}</td>
-                  <td title={row?.data?.popByCo || ''} data-l="总 POP">{row?.data ? row.data.totalPop.toLocaleString() : '—'}</td>
-                  <td data-l="状态">
-                    {!row ? <span className="status-pending">等待中…</span> :
-                      row.status === 'ok' ? <span className="status-ok">✔ 成功</span> :
-                      row.status === 'pending' ? <span className="status-pending">查询中…</span> :
-                      <><span className="status-err">✕ {row.error}</span> <button className="btn secondary small" onClick={() => runOne(no)}>重试</button></>}
-                  </td>
-                </tr>
-              ))}
+              {rows.map(({ no, idx, row }) => {
+                const ok = row?.status === 'ok';
+                const expanded = expandedRows.has(no);
+                return (
+                  <Fragment key={no}>
+                    <tr
+                      className={ok ? 'clickable' : undefined}
+                      onClick={ok ? () => toggleRow(no) : undefined}
+                    >
+                      <td className="rowidx">{idx}</td>
+                      <td className="mono" data-l="证书号">
+                        {ok && <span className={'caret' + (expanded ? ' open' : '')}>▸</span>}{no}
+                      </td>
+                      <td data-l="名称">{row?.data?.name ?? '—'}</td>
+                      <td data-l="评级">{row?.data ? <span className="grade-badge">{row.data.grade}</span> : '—'}</td>
+                      <td className="price" data-l="Alt 价格">{row?.data?.alt != null ? '$' + Math.round(row.data.alt).toLocaleString() : '—'}</td>
+                      <td title={row?.data?.popByCo || ''} data-l="总 POP">{row?.data ? row.data.totalPop.toLocaleString() : '—'}</td>
+                      <td data-l="状态">
+                        {!row ? <span className="status-pending">等待中…</span> :
+                          row.status === 'ok' ? <span className="status-ok">✔ 成功</span> :
+                          row.status === 'pending' ? <span className="status-pending">查询中…</span> :
+                          <><span className="status-err">✕ {row.error}</span> <button className="btn secondary small" onClick={(e) => { e.stopPropagation(); runOne(no); }}>重试</button></>}
+                      </td>
+                    </tr>
+                    {ok && expanded && (
+                      <tr className="detail-row">
+                        <td colSpan={7}>
+                          <div className="recent-sales">
+                            <div className="rs-title">最近成交（{row!.data!.grade}，最多 15 条）</div>
+                            {row!.data!.txs.length === 0 ? (
+                              <div className="no-tx">暂无最近成交记录</div>
+                            ) : (
+                              <table className="tx-table">
+                                <thead>
+                                  <tr><th>日期</th><th>拍卖行</th><th>评级</th><th>类型</th><th>价格</th></tr>
+                                </thead>
+                                <tbody>
+                                  {row!.data!.txs.map((t, ti) => (
+                                    <tr key={ti}>
+                                      <td data-l="日期">{new Date(t.date).toLocaleDateString('zh-CN')}</td>
+                                      <td data-l="拍卖行">{t.house || '—'}</td>
+                                      <td data-l="评级">{t.grade ?? '—'}</td>
+                                      <td data-l="类型">{t.type}</td>
+                                      <td className="tx-price" data-l="价格">
+                                        {t.url
+                                          ? <a href={t.url} target="_blank" rel="noopener noreferrer">${t.price.toLocaleString()}</a>
+                                          : '$' + t.price.toLocaleString()}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr>

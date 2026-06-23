@@ -2,8 +2,15 @@ const API = 'https://proxy.kevinzhang.fun/pokeprice';
 const API_KEY = 'J_4tM1IBP304QF3y9eFqnfSpy7efTTGPg6MCncATHXc';
 
 const INITIAL_CERT_QUERY = `query InitialCert($certNumber: String!) { cert(certNumber: $certNumber) { certNumber gradeNumber gradingCompany asset { id } } }`;
-const DETAIL_QUERY = `query Detail($id: ID!, $tsf: TimeSeriesFilter!) {
-  asset(id: $id) { id name altValueInfo(tsFilter: $tsf) { currentAltValue } cardPops { gradingCompany gradeNumber count } }
+const DETAIL_QUERY = `query Detail($id: ID!, $mtf: MarketTransactionFilter!, $tsf: TimeSeriesFilter!) {
+  asset(id: $id) {
+    id name
+    altValueInfo(tsFilter: $tsf) { currentAltValue }
+    cardPops { gradingCompany gradeNumber count }
+    pricingData(marketTransactionFilter: $mtf, tsFilter: $tsf) {
+      marketTransactions { id date price auctionHouse auctionType label attributes { gradeNumber gradingCompany url } }
+    }
+  }
 }`;
 
 async function gql(query: string, variables: Record<string, unknown>): Promise<unknown> {
@@ -38,12 +45,22 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4, label = '', onLog?:
   throw lastErr;
 }
 
+export interface Tx {
+  date: string;
+  price: number;
+  house: string | null;
+  grade: string | number | null;
+  type: string;
+  url: string | null;
+}
+
 export interface CertData {
   name: string;
   grade: string;
   alt: number | null;
   totalPop: number;
   popByCo: string;
+  txs: Tx[];
 }
 
 export async function queryCert(no: string, onLog?: (msg: string) => void): Promise<CertData> {
@@ -57,11 +74,18 @@ export async function queryCert(no: string, onLog?: (msg: string) => void): Prom
   if (!initial?.cert?.asset?.id) throw new Error('CERT NOT FOUND');
   const cert = initial.cert;
   const tsf = { ...tsfDates, gradingCompany: cert.gradingCompany, gradeNumber: String(cert.gradeNumber) };
-  const detail = await withRetry(() => gql(DETAIL_QUERY, { id: cert.asset!.id, tsf }), 4, no, onLog) as {
+  const mtf = { gradingCompany: cert.gradingCompany, gradeNumber: String(cert.gradeNumber) };
+  const detail = await withRetry(() => gql(DETAIL_QUERY, { id: cert.asset!.id, mtf, tsf }), 4, no, onLog) as {
     asset?: {
       id: string; name?: string;
       altValueInfo?: { currentAltValue?: number };
       cardPops?: Array<{ gradingCompany: string; gradeNumber: number; count: number }>;
+      pricingData?: {
+        marketTransactions?: Array<{
+          id: string; date: string; price: number; auctionHouse?: string; auctionType?: string; label?: string;
+          attributes?: { gradeNumber?: number; gradingCompany?: string; url?: string };
+        }>;
+      };
     }
   };
   const asset = detail.asset!;
@@ -70,11 +94,25 @@ export async function queryCert(no: string, onLog?: (msg: string) => void): Prom
   const popByCo = Object.entries(
     pops.reduce((acc: Record<string, number>, p) => { acc[p.gradingCompany] = (acc[p.gradingCompany] || 0) + p.count; return acc; }, {})
   ).map(([co, n]) => `${co}:${n.toLocaleString()}`).join(' / ');
+  // 最近成交：按日期倒序，最多 15 条
+  const txs: Tx[] = (asset.pricingData?.marketTransactions || [])
+    .filter(t => t.date && t.price != null)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 15)
+    .map(t => ({
+      date: t.date,
+      price: Number(t.price),
+      house: t.auctionHouse || null,
+      grade: t.attributes?.gradeNumber ?? cert.gradeNumber,
+      type: t.label || t.auctionType || 'Fixed Price',
+      url: t.attributes?.url || null,
+    }));
   return {
     name: asset.name || '—',
     grade: `${cert.gradingCompany} ${cert.gradeNumber}`,
     alt: asset.altValueInfo?.currentAltValue ?? null,
     totalPop,
     popByCo,
+    txs,
   };
 }
